@@ -1,0 +1,154 @@
+package com.example.gacha_fit.fragmentos;
+
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+
+import com.example.gacha_fit.R;
+import com.example.gacha_fit.activity.MainActivity;
+import com.google.android.material.button.MaterialButton;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.FirebaseFirestore;
+
+import java.util.Random;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Fragmento para verificar el código enviado al email del usuario
+ */
+public class VerificarCodigoFragment extends Fragment {
+
+    private EditText codigoEditText;
+    private MaterialButton btnVerificar;
+    private MaterialButton btnReenviar;
+    private TextView emailInfoTextView;
+    private FirebaseFirestore db;
+    private String email;
+
+    public VerificarCodigoFragment() {
+        // Constructor vacío requerido
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        db = FirebaseFirestore.getInstance();
+    }
+
+    @Nullable
+    @Override
+    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+                             @Nullable Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_verificar_codigo, container, false);
+
+        codigoEditText = view.findViewById(R.id.codigoVerificacion);
+        btnVerificar = view.findViewById(R.id.btnVerificarCodigo);
+        btnReenviar = view.findViewById(R.id.btnReenviarCodigo);
+        emailInfoTextView = view.findViewById(R.id.emailVerificacionInfo);
+
+        // Recuperar email desde los argumentos
+        Bundle args = getArguments();
+        if (args != null) {
+            email = args.getString("email", "");
+            emailInfoTextView.setText("Código enviado a: " + email);
+        }
+
+        btnVerificar.setOnClickListener(v -> verificarCodigo());
+        btnReenviar.setOnClickListener(v -> reenviarCodigo());
+
+        return view;
+    }
+
+    /**
+     * Verifica si el código introducido coincide con el almacenado en Firestore
+     */
+    private void verificarCodigo() {
+        String codigoIntroducido = codigoEditText.getText().toString().trim();
+
+        if (codigoIntroducido.isEmpty()) {
+            Toast.makeText(getContext(), "Por favor, introduce el código", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (email == null || email.isEmpty()) {
+            Toast.makeText(getContext(), "Error: No se pudo recuperar el email", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Verificar el código en Firestore
+        db.collection("CodigosVerificacion")
+                .document(email)
+                .get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot.exists()) {
+                        String codigoAlmacenado = documentSnapshot.getString("codigo");
+                        Long timestamp = documentSnapshot.getLong("timestamp");
+                        
+                        // Verificar si el código ha expirado (30 minutos)
+                        long tiempoActual = System.currentTimeMillis();
+                        long diferenciaTiempo = tiempoActual - (timestamp != null ? timestamp : 0);
+                        boolean codigoExpirado = diferenciaTiempo > (30 * 60 * 1000); // 30 minutos
+                        
+                        if (codigoExpirado) {
+                            Toast.makeText(getContext(), "El código ha expirado. Por favor, solicita uno nuevo", Toast.LENGTH_SHORT).show();
+                        } else if (codigoAlmacenado != null && codigoAlmacenado.equals(codigoIntroducido)) {
+                            // Código válido, pasar al siguiente fragmento
+                            NuevaContrasenaFragment nuevaContrasenaFragment = new NuevaContrasenaFragment();
+                            Bundle args = new Bundle();
+                            args.putString("email", email);
+                            nuevaContrasenaFragment.setArguments(args);
+                            
+                            if (getActivity() instanceof MainActivity) {
+                                ((MainActivity) getActivity()).cambiarFragmento(nuevaContrasenaFragment);
+                            }
+                        } else {
+                            Toast.makeText(getContext(), "Código incorrecto", Toast.LENGTH_SHORT).show();
+                        }
+                    } else {
+                        Toast.makeText(getContext(), "No se encontró un código válido para este email", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(getContext(), "Error al verificar el código: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    /**
+     * Reenvía un nuevo código de verificación al email
+     */
+    private void reenviarCodigo() {
+        if (email == null || email.isEmpty()) {
+            Toast.makeText(getContext(), "Error: No se pudo recuperar el email", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Generar nuevo código de verificación
+        Random random = new Random();
+        int codigoVerificacion = random.nextInt(90) + 10; // Genera número entre 10-99
+
+        // Guardar el nuevo código en Firestore
+        Map<String, Object> datosVerificacion = new HashMap<>();
+        datosVerificacion.put("codigo", String.valueOf(codigoVerificacion));
+        datosVerificacion.put("timestamp", System.currentTimeMillis());
+
+        db.collection("CodigosVerificacion")
+                .document(email)
+                .set(datosVerificacion)
+                .addOnSuccessListener(aVoid -> {
+                    // Simular envío de email (en una app real usarías Firebase Auth o un servicio de email)
+                    Toast.makeText(getContext(), "Nuevo código enviado: " + codigoVerificacion, Toast.LENGTH_LONG).show();
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(getContext(), "Error al reenviar el código: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+    }
+}

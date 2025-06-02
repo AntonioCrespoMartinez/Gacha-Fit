@@ -1,0 +1,265 @@
+package com.example.gacha_fit.fragmentos;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.viewpager2.widget.ViewPager2;
+
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.os.Build;
+import android.util.TypedValue;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.widget.Button;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentTransaction;
+
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+import com.example.gacha_fit.activity.EjercicioActivity;
+import com.example.gacha_fit.adaptador.AdaptadorImagen;
+import com.example.gacha_fit.R;
+import com.example.gacha_fit.activity.AppActivity;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.QueryDocumentSnapshot;
+import com.google.firebase.firestore.QuerySnapshot;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
+public class FragmentoGacha extends Fragment {
+
+    public static boolean animacionEnCurso = false;
+    private ViewPager2 viewPagerImages;
+    private Button buttonSelect;
+    private ImageButton btnAdmin;
+    private ImageButton btnConfigAudio;
+
+    public FragmentoGacha() {
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_fragmento_gacha, container, false);
+
+        viewPagerImages = view.findViewById(R.id.viewPager);
+        buttonSelect = view.findViewById(R.id.btnGacha);
+        btnAdmin = view.findViewById(R.id.btnAdmin);
+        btnConfigAudio = view.findViewById(R.id.btnConfigAudio);
+
+        //Verificar si el usuario es administrador
+        FirebaseAuth auth = FirebaseAuth.getInstance();
+        if (auth.getCurrentUser() != null) {
+            String userEmail = auth.getCurrentUser().getEmail();
+
+            if ("admin@gmail.com".equals(userEmail)) {
+                //Hacer visible el botón admin para el administrador
+                btnAdmin.setVisibility(View.VISIBLE);
+
+                //Configurar el onClickListener para el botón de administrador
+                btnAdmin.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        try {
+                            //Método 1: Intentar usando Intent y una nueva Activity
+                            if (getActivity() != null) {
+                                //Creamos una actividad intermediaria para mostrar el fragmento
+                                Intent intent = new Intent(getActivity(), EjercicioActivity.class);
+                                intent.putExtra("mostrarListaEjercicios", true);
+                                startActivity(intent);
+                                return;
+                            }
+
+                            //Método 2 (alternativo): Intentar reemplazar el fragmento directamente
+                            if (getActivity() != null) {
+                                ListaEjerciciosFragment fragment = new ListaEjerciciosFragment();
+                                getActivity().getSupportFragmentManager()
+                                        .beginTransaction()
+                                        .replace(R.id.fragmentContainerView, fragment)
+                                        .addToBackStack(null)
+                                        .commitAllowingStateLoss();
+                            }
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+            } else {
+                btnAdmin.setVisibility(View.GONE);
+            }
+        } else {
+            btnAdmin.setVisibility(View.GONE);
+        }
+
+        int[] images = {R.drawable.gacha_brazo, R.drawable.gacha_pierna, R.drawable.gacha_pecho};
+        viewPagerImages.setAdapter(new AdaptadorImagen(getContext(), images));
+
+        buttonSelect.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                int currentItem = viewPagerImages.getCurrentItem();
+                String selectedTable;
+                switch (currentItem) {
+                    case 0:
+                        selectedTable = "brazo";
+                        break;
+                    case 1:
+                        selectedTable = "pierna";
+                        break;
+                    case 2:
+                        selectedTable = "pecho";
+                        break;
+                    default:
+                        selectedTable = "brazo";
+                }
+
+                //Animar el ViewPager antes de continuar
+                animarSeleccion(selectedTable);
+            }
+        });
+
+        btnConfigAudio.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (getActivity() instanceof AppActivity) {
+                    ConfiguracionAudio configuracionAudio = new ConfiguracionAudio();
+                    ((AppActivity) getActivity()).cambiarFragmento(configuracionAudio);
+                }
+            }
+        });
+
+        return view;
+    }
+
+    /**
+     * Obtiene un ejercicio aleatorio de Firestore según la categoría dada,
+     * crea un Bundle con sus datos y navega al fragmento de detalle del ejercicio.
+     *
+     * @param selectedTable Nombre de la categoría/tabla (ej. "brazo", "pierna", "pecho")
+     */
+    private void obtenerElementoAleatorio(String selectedTable) {
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        db.collection("Ejercicios")
+                .whereEqualTo("tipo", selectedTable)
+                .get()
+                .addOnSuccessListener(new com.google.android.gms.tasks.OnSuccessListener<QuerySnapshot>() {
+                    @Override
+                    public void onSuccess(QuerySnapshot queryDocumentSnapshots) {
+                        List<Map<String, Object>> ejercicios = new ArrayList<>();
+                        for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
+                            ejercicios.add(document.getData());
+                        }
+                        if (!ejercicios.isEmpty()) {
+                            int randomIndex = new Random().nextInt(ejercicios.size());
+                            Map<String, Object> ejercicioAleatorio = ejercicios.get(randomIndex);
+
+                            Bundle bundle = new Bundle();
+                            bundle.putString("nombre", ejercicioAleatorio.get("nombre") != null ? ejercicioAleatorio.get("nombre").toString() : "");
+                            bundle.putString("descripcion", ejercicioAleatorio.get("descripcion") != null ? ejercicioAleatorio.get("descripcion").toString() : "");
+                            bundle.putString("dificultad_facil", ejercicioAleatorio.get("dificultad_facil") != null ? ejercicioAleatorio.get("dificultad_facil").toString() : "");
+                            bundle.putString("dificultad_normal", ejercicioAleatorio.get("dificultad_normal") != null ? ejercicioAleatorio.get("dificultad_normal").toString() : "");
+                            bundle.putString("dificultad_dificil", ejercicioAleatorio.get("dificultad_dificil") != null ? ejercicioAleatorio.get("dificultad_dificil").toString() : "");
+                            Object pf = ejercicioAleatorio.get("puntuacion_facil");
+                            Object pn = ejercicioAleatorio.get("puntuacion_normal");
+                            Object pd = ejercicioAleatorio.get("puntuacion_dificil");
+
+                            int puntuacionFacil = (pf instanceof Number) ? ((Number) pf).intValue() : 0;
+                            int puntuacionNormal = (pn instanceof Number) ? ((Number) pn).intValue() : 0;
+                            int puntuacionDificil = (pd instanceof Number) ? ((Number) pd).intValue() : 0;
+
+                            bundle.putInt("puntuacion_facil", puntuacionFacil);
+                            bundle.putInt("puntuacion_normal", puntuacionNormal);
+                            bundle.putInt("puntuacion_dificil", puntuacionDificil);
+
+                            bundle.putString("medida", ejercicioAleatorio.get("medida") != null ? ejercicioAleatorio.get("medida").toString() : "");
+                            bundle.putString("imagen_url", ejercicioAleatorio.get("imagen_url") != null ? ejercicioAleatorio.get("imagen_url").toString() : "");
+
+                            if (!isAdded()) return;
+
+                            Activity activity = getActivity();
+                            if (activity != null) {
+                                Intent intent = new Intent(activity, EjercicioActivity.class);
+                                intent.putExtras(bundle);
+                                activity.startActivity(intent);
+                            }
+                        }
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    e.printStackTrace();
+                });
+    }
+
+    /**
+     * Anima el ViewPager con efecto de pulso antes de obtener el ejercicio aleatorio
+     * @param selectedTable La categoría seleccionada
+     */
+    private void animarSeleccion(final String selectedTable) {
+
+        //Marcar que hay una animación en curso
+        animacionEnCurso = true;
+
+        //Crear animaciones de escala
+        ObjectAnimator scaleX1 = ObjectAnimator.ofFloat(viewPagerImages, "scaleX", 1.0f, 1.15f);
+        ObjectAnimator scaleX2 = ObjectAnimator.ofFloat(viewPagerImages, "scaleX", 1.15f, 0.95f);
+        ObjectAnimator scaleX3 = ObjectAnimator.ofFloat(viewPagerImages, "scaleX", 0.95f, 1.05f);
+        ObjectAnimator scaleX4 = ObjectAnimator.ofFloat(viewPagerImages, "scaleX", 1.05f, 1.0f);
+
+        ObjectAnimator scaleY1 = ObjectAnimator.ofFloat(viewPagerImages, "scaleY", 1.0f, 1.15f);
+        ObjectAnimator scaleY2 = ObjectAnimator.ofFloat(viewPagerImages, "scaleY", 1.15f, 0.95f);
+        ObjectAnimator scaleY3 = ObjectAnimator.ofFloat(viewPagerImages, "scaleY", 0.95f, 1.05f);
+        ObjectAnimator scaleY4 = ObjectAnimator.ofFloat(viewPagerImages, "scaleY", 1.05f, 1.0f);
+
+        //Configurar duración
+        long duracionPorEtapa = 150;
+        scaleX1.setDuration(duracionPorEtapa);
+        scaleX2.setDuration(duracionPorEtapa);
+        scaleX3.setDuration(duracionPorEtapa);
+        scaleX4.setDuration(duracionPorEtapa);
+
+        scaleY1.setDuration(duracionPorEtapa);
+        scaleY2.setDuration(duracionPorEtapa);
+        scaleY3.setDuration(duracionPorEtapa);
+        scaleY4.setDuration(duracionPorEtapa);
+
+        //Crear conjunto de animación
+        final AnimatorSet animatorSet = new AnimatorSet();
+
+        //Ejecutar animaciones en secuencia
+        animatorSet.playTogether(scaleX1, scaleY1);
+        animatorSet.play(scaleX2).with(scaleY2).after(scaleX1);
+        animatorSet.play(scaleX3).with(scaleY3).after(scaleX2);
+        animatorSet.play(scaleX4).with(scaleY4).after(scaleX3);
+
+        animatorSet.setInterpolator(new AccelerateDecelerateInterpolator());
+
+        //Ejecutar cuando termine la animación
+        animatorSet.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                // Obtiene un ejercicio aleatorio de la categoría seleccionada después de la animación
+                obtenerElementoAleatorio(selectedTable);
+                animacionEnCurso = false;
+            }
+        });
+
+        //Iniciar la animación
+        animatorSet.start();
+    }
+}
